@@ -77,21 +77,19 @@ def extract_pdf_text(pdf_file):
 # --------------------------------------------------------
 # SPLIT INTO CHUNKS
 # --------------------------------------------------------
-def split_text(text, chunk_size=500):
-    sentences = re.split(r'(?<=[.!?]) +', text)
-    chunks, current = [], ""
+def split_text(text, chunk_size=1000, overlap=200):
+    words = text.split()
+    chunks = []
+    start = 0
 
-    for s in sentences:
-        if len(current) + len(s) <= chunk_size:
-            current += " " + s
-        else:
-            chunks.append(current.strip())
-            current = s
+    while start < len(words):
+        end = start + chunk_size
+        chunk = " ".join(words[start:end])
+        chunks.append(chunk)
+        start = end - overlap   # sliding window
 
-    if current.strip():
-        chunks.append(current.strip())
+    return [c for c in chunks if len(c.strip()) > 50]
 
-    return [c for c in chunks if len(c) > 50]
 
 
 # --------------------------------------------------------
