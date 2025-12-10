@@ -18,7 +18,7 @@ client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-st.title("📘 AI Tutor – PDF RAG Assistant (Powered by Groq + FAISS)")
+st.title("📘 RAG model")
 st.write("Upload PDF → Ask questions → AI answers from your syllabus!")
 
 # --------------------------------------------------------
