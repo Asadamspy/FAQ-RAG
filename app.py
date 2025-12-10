@@ -1,31 +1,40 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz
 import numpy as np
 import faiss
-from sentence_transformers import SentenceTransformer
+import requests
 from groq import Groq
 import os
 import re
 
-# --------------------------------------------------------
+# ================================
 # SETUP
-# --------------------------------------------------------
-
-os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]  # for Streamlit Cloud
-
+# ================================
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+HF_API_KEY = st.secrets["HF_API_KEY"]
 
+HF_EMBED_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
 
-embedder = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+headers = {"Authorization": f"Bearer {HF_API_KEY}"}
 
+# ================================
+# EMBEDDING FUNCTION (NO TORCH)
+# ================================
+def embed(texts):
+    if isinstance(texts, str):
+        texts = [texts]
 
-st.title("📘 AI Tutor – PDF RAG Assistant (Powered by Groq + FAISS)")
-st.write("Upload PDF → Ask questions → AI answers from your syllabus!")
+    response = requests.post(
+        HF_EMBED_URL,
+        headers=headers,
+        json={"inputs": texts, "options": {"wait_for_model": True}}
+    )
 
-# --------------------------------------------------------
-# FUNCTIONS
-# --------------------------------------------------------
+    return np.array(response.json())
 
+# ================================
+# PDF TEXT EXTRACTION
+# ================================
 def extract_pdf_text(pdf_file):
     doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
     text = ""
@@ -33,25 +42,31 @@ def extract_pdf_text(pdf_file):
         text += page.get_text()
     return text
 
+# ================================
+# TEXT CHUNKING
+# ================================
 def split_text(text, chunk_size=500):
     sentences = re.split(r'(?<=[.!?]) +', text)
     chunks, current = [], ""
-    
+
     for s in sentences:
         if len(current) + len(s) <= chunk_size:
             current += " " + s
         else:
             chunks.append(current.strip())
             current = s
-    chunks.append(current.strip())
-    
-    return [c for c in chunks if len(c) > 50]  # remove small ones
 
+    if current.strip():
+        chunks.append(current.strip())
+
+    return [c for c in chunks if len(c) > 50]
+
+# ================================
+# BUILD FAISS INDEX
+# ================================
 def build_faiss(chunks):
-    embeddings = embedder.encode(chunks, normalize_embeddings=True)
-    embeddings = np.array(embeddings)
+    embeddings = embed(chunks)
 
-    # remove invalid embeddings
     mask = ~np.isnan(embeddings).any(axis=1)
     embeddings = embeddings[mask]
     chunks = [chunks[i] for i in range(len(chunks)) if mask[i]]
@@ -62,16 +77,21 @@ def build_faiss(chunks):
 
     return index, chunks
 
+# ================================
+# RETRIEVAL
+# ================================
 def retrieve(query, index, chunks, k=3):
-    q_emb = embedder.encode([query], normalize_embeddings=True)
+    q_emb = embed([query])
     scores, idxs = index.search(q_emb, k)
 
     results = []
     for i, score in zip(idxs[0], scores[0]):
         results.append({"chunk": chunks[i], "score": float(score)})
-
     return results
 
+# ================================
+# RAG ANSWERING
+# ================================
 def answer_with_rag(question, index, chunks):
     retrieved = retrieve(question, index, chunks, k=3)
 
@@ -79,7 +99,7 @@ def answer_with_rag(question, index, chunks):
 
     prompt = f"""
 Use ONLY the context to answer.
-If answer not found, say: 'Information not available in the document.'
+If answer is not found, say: "Information not available in the document."
 
 CONTEXT:
 {context}
@@ -98,23 +118,24 @@ ANSWER:
 
     return response.choices[0].message.content, retrieved
 
-# --------------------------------------------------------
+# ================================
 # STREAMLIT UI
-# --------------------------------------------------------
+# ================================
+st.title("📘 AI Tutor – PDF RAG Assistant (Groq + FAISS + HF Embeddings)")
+st.write("Upload PDF → Ask questions → AI answers using your syllabus.")
 
 uploaded_file = st.file_uploader("📄 Upload your Syllabus PDF", type=["pdf"])
 
 if uploaded_file:
-    st.success("PDF uploaded successfully! 📄 Extracting text...")
-    
+    st.success("PDF uploaded successfully! Extracting text...")
+
     pdf_text = extract_pdf_text(uploaded_file)
     chunks = split_text(pdf_text)
     index, chunks = build_faiss(chunks)
 
     st.success(f"PDF processed! Total chunks created: {len(chunks)}")
-    st.write("---")
 
-    question = st.text_input("Ask a question from the PDF:")
+    question = st.text_input("Ask a question:")
 
     if st.button("Ask AI"):
         if question.strip() == "":
