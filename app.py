@@ -50,20 +50,24 @@ st.markdown("""
         margin: 1.5rem 0;
     }
     .answer-box {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        background: #ffffff;
+        color: #000000;
         padding: 1.5rem;
         border-radius: 12px;
         border-left: 5px solid #667eea;
         margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
     .chunk-box {
-        background: #f8f9fa;
+        background: #ffffff;
+        color: #000000;
         padding: 1rem;
         border-radius: 8px;
         border-left: 3px solid #764ba2;
         margin: 0.5rem 0;
         font-family: 'Courier New', monospace;
         font-size: 0.9rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
     }
     h1 {
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
