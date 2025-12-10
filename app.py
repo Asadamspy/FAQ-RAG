@@ -13,7 +13,8 @@ import re
 
 os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]  # for Streamlit Cloud
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+
 
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
