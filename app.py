@@ -1,10 +1,11 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz
 import numpy as np
 import faiss
 import requests
 from groq import Groq
 import re
+import json
 
 # -----------------------------------------------
 # 1️⃣ LOAD API KEYS
@@ -18,10 +19,10 @@ HF_EMBED_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction
 headers = {"Authorization": f"Bearer {HF_API_KEY}"}
 
 # -----------------------------------------------
-# 2️⃣ EMBEDDING FUNCTION (NO TORCH — HF HOSTED)
+# 2️⃣ EMBEDDINGS (ROBUST FIXED VERSION)
 # -----------------------------------------------
 def embed(texts):
-    """Returns a 2D float32 numpy array of embeddings."""
+    """Return float32 embeddings with guaranteed 2D shape."""
     if isinstance(texts, str):
         texts = [texts]
 
@@ -31,20 +32,41 @@ def embed(texts):
         json={"inputs": texts, "options": {"wait_for_model": True}}
     )
 
-    raw = response.json()
+    try:
+        raw = response.json()
+    except json.JSONDecodeError:
+        st.error("❌ HF returned non-JSON response.")
+        st.stop()
 
+    # Normalize output into 2D list
     cleaned = []
-    for item in raw:
-        if isinstance(item, list):
-            # If HF returns [[vector]]
-            if isinstance(item[0], list):
-                cleaned.append(item[0])
-            else:
-                cleaned.append(item)
-        else:
-            cleaned.append(item)
 
-    return np.array(cleaned, dtype=np.float32)
+    # HF returns one of:
+    # case A: [[vector], [vector], ...]
+    # case B: [vector] when only 1 input
+    # case C: [[[vector]]] wrapped
+    if isinstance(raw, list):
+        # If first element is NOT a list → it's a single vector
+        if len(raw) > 0 and not isinstance(raw[0], list):
+            cleaned.append(raw)  # convert to 2D
+        else:
+            # multiple embeddings
+            for item in raw:
+                if isinstance(item, list) and len(item) == 1 and isinstance(item[0], list):
+                    cleaned.append(item[0])   # unwrap [[vector]] → vector
+                else:
+                    cleaned.append(item)
+    else:
+        st.error("❌ Unexpected HF embedding format:\n" + str(raw))
+        st.stop()
+
+    arr = np.array(cleaned, dtype=np.float32)
+
+    # Ensure shape = (#chunks, embedding_dim)
+    if len(arr.shape) == 1:
+        arr = arr.reshape(1, -1)
+
+    return arr
 
 # -----------------------------------------------
 # 3️⃣ PDF TEXT EXTRACTION
@@ -74,7 +96,7 @@ def split_text(text, chunk_size=500):
     if current.strip():
         chunks.append(current.strip())
 
-    return [c for c in chunks if len(c) > 40]  # remove small chunks
+    return [c for c in chunks if len(c) > 40]
 
 # -----------------------------------------------
 # 5️⃣ BUILD FAISS VECTOR INDEX
@@ -90,7 +112,7 @@ def build_faiss(chunks):
     return index, chunks
 
 # -----------------------------------------------
-# 6️⃣ RETRIEVE CHUNKS
+# 6️⃣ RETRIEVE TOP CHUNKS
 # -----------------------------------------------
 def retrieve(query, index, chunks, k=3):
     q_emb = embed([query]).astype("float32")
@@ -98,11 +120,12 @@ def retrieve(query, index, chunks, k=3):
 
     results = []
     for i, score in zip(idxs[0], scores[0]):
-        results.append({"chunk": chunks[i], "score": float(score)})
+        if i < len(chunks):
+            results.append({"chunk": chunks[i], "score": float(score)})
     return results
 
 # -----------------------------------------------
-# 7️⃣ RAG ANSWERING WITH GROQ LLAMA3
+# 7️⃣ RAG ANSWERING
 # -----------------------------------------------
 def answer_with_rag(question, index, chunks):
     retrieved = retrieve(question, index, chunks)
@@ -145,9 +168,14 @@ if uploaded_file:
 
     pdf_text = extract_pdf_text(uploaded_file)
     chunks = split_text(pdf_text)
+
+    if len(chunks) == 0:
+        st.error("❌ PDF has no readable text.")
+        st.stop()
+
     index, chunks = build_faiss(chunks)
 
-    st.success(f"PDF processed successfully! Total chunks: {len(chunks)}")
+    st.success(f"PDF processed! Total chunks: {len(chunks)}")
     st.write("---")
 
     question = st.text_input("Ask a question from the document:")
