@@ -80,7 +80,8 @@ def split_text(text, chunk_size=500):
 # 5️⃣ BUILD FAISS VECTOR INDEX
 # -----------------------------------------------
 def build_faiss(chunks):
-    embeddings = embed(chunks).astype("float32")
+    embeddings = embed(chunks)
+
     dim = embeddings.shape[1]
 
     index = faiss.IndexFlatIP(dim)
