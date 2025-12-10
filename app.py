@@ -16,7 +16,8 @@ os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]  # for Streamlit Cloud
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedder = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
 
 st.title("📘 AI Tutor – PDF RAG Assistant (Powered by Groq + FAISS)")
 st.write("Upload PDF → Ask questions → AI answers from your syllabus!")
